@@ -2,7 +2,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 from airflow.operators.bash import BashOperator
-
 def hello():
     print("Hello from my first Airflow DAG!")
 def hello2():
