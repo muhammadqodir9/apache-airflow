@@ -1,9 +1,16 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
 from datetime import datetime
+from io import StringIO
+
 import pandas as pd
 
 
+# -------------------------
+# EXTRACT
+# -------------------------
 def extract_data():
     file_path = "/opt/airflow/data/airflow.xlsx"
 
@@ -15,6 +22,9 @@ def extract_data():
     return df.to_json()
 
 
+# -------------------------
+# TRANSFORM
+# -------------------------
 def transform_data(**kwargs):
     ti = kwargs["ti"]
 
@@ -22,10 +32,14 @@ def transform_data(**kwargs):
         task_ids="extract_data"
     )
 
-    df = pd.read_json(data)
+    df = pd.read_json(StringIO(data))
 
-    # Example transformation
-    df.columns = df.columns.str.lower().str.replace(" ", "_")
+    # Standardize column names
+    df.columns = (
+        df.columns
+        .str.lower()
+        .str.replace(" ", "_")
+    )
 
     print("Transformed data:")
     print(df)
@@ -33,6 +47,9 @@ def transform_data(**kwargs):
     return df.to_json()
 
 
+# -------------------------
+# LOAD
+# -------------------------
 def load_data(**kwargs):
     ti = kwargs["ti"]
 
@@ -40,19 +57,58 @@ def load_data(**kwargs):
         task_ids="transform_data"
     )
 
-    df = pd.read_json(data)
+    df = pd.read_json(StringIO(data))
 
     print("Data that will be loaded into Supabase:")
     print(df)
 
-    # Supabase/PostgreSQL insertion will go here later
+    hook = PostgresHook(
+        postgres_conn_id="supabase_id"
+    )
+
+    connection = hook.get_conn()
+    cursor = connection.cursor()
+
+    for _, row in df.iterrows():
+
+        cursor.execute(
+            """
+            INSERT INTO orders
+            (order_id, product, quantity, price, country)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (order_id)
+            DO UPDATE SET
+                product = EXCLUDED.product,
+                quantity = EXCLUDED.quantity,
+                price = EXCLUDED.price,
+                country = EXCLUDED.country;
+            """,
+            (
+                row["order_id"],
+                row["product"],
+                row["quantity"],
+                row["price"],
+                row["country"],
+            )
+        )
+
+    connection.commit()
+
+    cursor.close()
+    connection.close()
+
+    print(f"Loaded {len(df)} rows into Supabase.")
 
 
+# -------------------------
+# DAG
+# -------------------------
 with DAG(
     dag_id="excel_to_supabase",
     start_date=datetime(2026, 9, 9),
-    schedule="@daily",
+    schedule="* * * * *",
     catchup=False,
+    max_active_runs=1,
 ) as dag:
 
     extract = PythonOperator(
