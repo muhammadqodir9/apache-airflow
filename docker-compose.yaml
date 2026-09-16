@@ -91,6 +91,22 @@ x-airflow-common:
       condition: service_healthy
 
 services:
+
+  spark:
+    image: apache/spark:4.2.0-python3
+    container_name: spark
+    ports:
+      - "4040:4040"
+      - "7077:7077"
+      - "8080:8080"
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}/pyspark project:/opt/spark-apps
+      - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/spark-data
+    working_dir: /opt/spark-apps
+    command: [ "sleep", "infinity" ]
+    restart: unless-stopped
+
+
   postgres:
     image: postgres:16
     environment:
