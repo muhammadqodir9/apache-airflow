@@ -1,21 +1,78 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
+
 from datetime import datetime
 
 
-def say_hello():
-    print("Hello from my construction pipeline!")
+# -------------------------
+# EXTRACT FROM SQL SERVER
+# -------------------------
+def extract_from_sql_server():
+
+    hook = MsSqlHook(
+        mssql_conn_id="sql_server"
+    )
+
+    df = hook.get_pandas_df(
+        sql="""
+            SELECT *
+            FROM orders;
+        """
+    )
+
+    print("Data extracted from SQL Server:")
+    print(df)
+
+    return df
 
 
+# -------------------------
+# SAVE AS CSV
+# -------------------------
+def save_to_csv():
+
+    hook = MsSqlHook(
+        mssql_conn_id="sql_server"
+    )
+
+    df = hook.get_pandas_df(
+        sql="""
+            SELECT *
+            FROM orders;
+        """
+    )
+
+    file_path = "/opt/airflow/data/orders.csv"
+
+    df.to_csv(
+        file_path,
+        index=False
+    )
+
+    print(f"CSV file created: {file_path}")
+    print(f"Rows written: {len(df)}")
+
+
+# -------------------------
+# DAG
+# -------------------------
 with DAG(
-    dag_id="construction_pipeline",
-    start_date=datetime(2026, 9, 2),
-    description="This is a construction pipeline DAG",
-    schedule=None,
+    dag_id="sql_server_to_csv",
+
+    start_date=datetime(
+        2026,
+        9,
+        17
+    ),
+
+    schedule="@daily",
+
     catchup=False,
+
 ) as dag:
 
-    say_hello_task = PythonOperator(
-        task_id="say_hello",
-        python_callable=say_hello,
+    extract_and_save = PythonOperator(
+        task_id="extract_and_save",
+        python_callable=save_to_csv,
     )
